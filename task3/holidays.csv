@@ -1,0 +1,40 @@
+exchange,date,holiday
+CME,2026-01-01,New Year's Day
+CME,2026-01-19,MLK Jr. Day
+CME,2026-02-16,Presidents Day
+CME,2026-04-03,Good Friday
+CME,2026-05-25,Memorial Day
+CME,2026-06-19,Juneteenth
+CME,2026-07-03,Independence Day (observed)
+CME,2026-09-07,Labor Day
+CME,2026-11-26,Thanksgiving Day
+CME,2026-12-25,Christmas Day
+NASDAQ,2026-01-01,New Year's Day
+NASDAQ,2026-01-19,"MLK, Jr. Day"
+NASDAQ,2026-02-16,Presidents Day
+NASDAQ,2026-04-03,Good Friday
+NASDAQ,2026-05-25,Memorial Day
+NASDAQ,2026-06-19,Juneteenth
+NASDAQ,2026-07-03,Independence Day (Observed)
+NASDAQ,2026-09-07,Labor Day
+NASDAQ,2026-11-26,Thanksgiving Day
+NASDAQ,2026-11-27,Early Close
+NASDAQ,2026-12-24,Early Close
+NASDAQ,2026-12-25,Christmas Day
+NYSE,2026-01-01,New Year’s Day
+NYSE,2026-01-19,"Martin Luther King, Jr. Day"
+NYSE,2026-02-16,Washington's Birthday
+NYSE,2026-04-03,Good Friday
+NYSE,2026-05-25,Memorial Day
+NYSE,2026-06-19,Juneteenth National Independence Day
+NYSE,2026-09-07,Labor Day
+OPRA,2026-01-01,New Year's Day
+OPRA,2026-01-19,MLK Jr. Day
+OPRA,2026-02-16,Presidents Day
+OPRA,2026-04-03,Good Friday
+OPRA,2026-05-25,Memorial Day
+OPRA,2026-06-19,Juneteenth
+OPRA,2026-07-03,Independence Day (observed)
+OPRA,2026-09-07,Labor Day
+OPRA,2026-11-26,Thanksgiving Day
+OPRA,2026-12-25,Christmas Day
