@@ -5,6 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from dotenv import load_dotenv
 import os
 
 SCOPES = [
@@ -13,18 +14,17 @@ SCOPES = [
 ]
 
 CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), 'credentials.json')
-DRIVE_FOLDER_NAME = 'dxfeed-holidays'
-SHEET_ID = '1wOl-QPo0cW7b4MsWxuSn4OAZkK1vDwDVxmFZ7f2Br4c'
+YEAR = 2026
 
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+SHEET_ID = os.getenv('SHEET_ID')
+CSV_FILE_ID = os.getenv('CSV_FILE_ID')
 
-def get_google_client():
+def get_clients():
     creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
-    return gspread.authorize(creds)
-
-
-def get_drive_service():
-    creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
-    return build('drive', 'v3', credentials=creds)
+    sheets_client = gspread.authorize(creds)
+    drive_service = build('drive', 'v3', credentials=creds)
+    return sheets_client, drive_service
 
 
 def scrape_nasdaq():
@@ -32,6 +32,7 @@ def scrape_nasdaq():
     url = "https://www.nasdaq.com/market-activity/stock-market-holiday-schedule"
     headers = {'User-Agent': 'Mozilla/5.0'}
     r = requests.get(url, headers=headers, timeout=10)
+    r.raise_for_status()
     soup = BeautifulSoup(r.text, 'html.parser')
     holidays = []
     tables = soup.find_all('table')
@@ -53,6 +54,7 @@ def scrape_nyse():
     url = "https://www.nyse.com/markets/hours-calendars"
     headers = {'User-Agent': 'Mozilla/5.0'}
     r = requests.get(url, headers=headers, timeout=10)
+    r.raise_for_status()
     soup = BeautifulSoup(r.text, 'html.parser')
     holidays = []
     table = soup.find('table')
@@ -66,7 +68,7 @@ def scrape_nyse():
                 if date_raw and date_raw != '—' and date_raw != '—*':
                     holidays.append({
                         'exchange': 'NYSE',
-                        'date': f"{date_raw}, 2026",
+                        'date': f"{date_raw}, {YEAR}",
                         'holiday': holiday_name
                     })
     return holidays
@@ -75,16 +77,16 @@ def scrape_nyse():
 def scrape_cme():
     print("Scraping CME (hardcoded - site returns 403 for automated requests)...")
     holidays = [
-        {'exchange': 'CME', 'date': 'January 1, 2026', 'holiday': "New Year's Day"},
-        {'exchange': 'CME', 'date': 'January 19, 2026', 'holiday': 'MLK Jr. Day'},
-        {'exchange': 'CME', 'date': 'February 16, 2026', 'holiday': 'Presidents Day'},
-        {'exchange': 'CME', 'date': 'April 3, 2026', 'holiday': 'Good Friday'},
-        {'exchange': 'CME', 'date': 'May 25, 2026', 'holiday': 'Memorial Day'},
-        {'exchange': 'CME', 'date': 'June 19, 2026', 'holiday': 'Juneteenth'},
-        {'exchange': 'CME', 'date': 'July 3, 2026', 'holiday': 'Independence Day (observed)'},
-        {'exchange': 'CME', 'date': 'September 7, 2026', 'holiday': 'Labor Day'},
-        {'exchange': 'CME', 'date': 'November 26, 2026', 'holiday': 'Thanksgiving Day'},
-        {'exchange': 'CME', 'date': 'December 25, 2026', 'holiday': 'Christmas Day'},
+        {'exchange': 'CME', 'date': f'January 1, {YEAR}', 'holiday': "New Year's Day"},
+        {'exchange': 'CME', 'date': f'January 19, {YEAR}', 'holiday': 'MLK Jr. Day'},
+        {'exchange': 'CME', 'date': f'February 16, {YEAR}', 'holiday': 'Presidents Day'},
+        {'exchange': 'CME', 'date': f'April 3, {YEAR}', 'holiday': 'Good Friday'},
+        {'exchange': 'CME', 'date': f'May 25, {YEAR}', 'holiday': 'Memorial Day'},
+        {'exchange': 'CME', 'date': f'June 19, {YEAR}', 'holiday': 'Juneteenth'},
+        {'exchange': 'CME', 'date': f'July 3, {YEAR}', 'holiday': 'Independence Day (observed)'},
+        {'exchange': 'CME', 'date': f'September 7, {YEAR}', 'holiday': 'Labor Day'},
+        {'exchange': 'CME', 'date': f'November 26, {YEAR}', 'holiday': 'Thanksgiving Day'},
+        {'exchange': 'CME', 'date': f'December 25, {YEAR}', 'holiday': 'Christmas Day'},
     ]
     return holidays
 
@@ -92,18 +94,26 @@ def scrape_cme():
 def scrape_opra():
     print("Scraping OPRA (hardcoded - site times out, OPRA observes NYSE holidays)...")
     holidays = [
-        {'exchange': 'OPRA', 'date': 'January 1, 2026', 'holiday': "New Year's Day"},
-        {'exchange': 'OPRA', 'date': 'January 19, 2026', 'holiday': 'MLK Jr. Day'},
-        {'exchange': 'OPRA', 'date': 'February 16, 2026', 'holiday': 'Presidents Day'},
-        {'exchange': 'OPRA', 'date': 'April 3, 2026', 'holiday': 'Good Friday'},
-        {'exchange': 'OPRA', 'date': 'May 25, 2026', 'holiday': 'Memorial Day'},
-        {'exchange': 'OPRA', 'date': 'June 19, 2026', 'holiday': 'Juneteenth'},
-        {'exchange': 'OPRA', 'date': 'July 3, 2026', 'holiday': 'Independence Day (observed)'},
-        {'exchange': 'OPRA', 'date': 'September 7, 2026', 'holiday': 'Labor Day'},
-        {'exchange': 'OPRA', 'date': 'November 26, 2026', 'holiday': 'Thanksgiving Day'},
-        {'exchange': 'OPRA', 'date': 'December 25, 2026', 'holiday': 'Christmas Day'},
+        {'exchange': 'OPRA', 'date': f'January 1, {YEAR}', 'holiday': "New Year's Day"},
+        {'exchange': 'OPRA', 'date': f'January 19, {YEAR}', 'holiday': 'MLK Jr. Day'},
+        {'exchange': 'OPRA', 'date': f'February 16, {YEAR}', 'holiday': 'Presidents Day'},
+        {'exchange': 'OPRA', 'date': f'April 3, {YEAR}', 'holiday': 'Good Friday'},
+        {'exchange': 'OPRA', 'date': f'May 25, {YEAR}', 'holiday': 'Memorial Day'},
+        {'exchange': 'OPRA', 'date': f'June 19, {YEAR}', 'holiday': 'Juneteenth'},
+        {'exchange': 'OPRA', 'date': f'July 3, {YEAR}', 'holiday': 'Independence Day (observed)'},
+        {'exchange': 'OPRA', 'date': f'September 7, {YEAR}', 'holiday': 'Labor Day'},
+        {'exchange': 'OPRA', 'date': f'November 26, {YEAR}', 'holiday': 'Thanksgiving Day'},
+        {'exchange': 'OPRA', 'date': f'December 25, {YEAR}', 'holiday': 'Christmas Day'},
     ]
     return holidays
+
+def upload_csv_to_drive(drive_service, csv_path):
+    media = MediaFileUpload(csv_path, mimetype='text/csv', resumable=False)
+    drive_service.files().update(
+        fileId=CSV_FILE_ID,
+        media_body=media
+    ).execute()
+    print(f"CSV updated in Google Drive: https://drive.google.com/file/d/{CSV_FILE_ID}/view")
 
 
 def main():
@@ -133,27 +143,25 @@ def main():
 
     csv_path = os.path.join(os.path.dirname(__file__), 'holidays.csv')
     df.to_csv(csv_path, index=False)
-    print(f"\nCSV saved: {csv_path}")
+    print(f"\nCSV saved locally: {csv_path}")
 
     print("\nConnecting to Google...")
-    client = get_google_client()
+    client, drive_service = get_clients()
 
+    # Update Google Sheet
     sh = client.open_by_key(SHEET_ID)
     ws = sh.sheet1
     ws.clear()
     ws.update([df.columns.tolist()] + df.values.tolist())
     print(f"Google Sheet updated: {sh.url}")
 
+    # Upload CSV to Google Drive folder
     try:
-        ws2 = sh.worksheet('CSV Export')
-    except gspread.WorksheetNotFound:
-        ws2 = sh.add_worksheet(title='CSV Export', rows=100, cols=10)
+        upload_csv_to_drive(drive_service, csv_path)
+    except Exception as e:
+        print(f"WARNING: Could not upload CSV to Drive: {e}")
+        print(f"CSV is available locally at: {csv_path}")
 
-    ws2.clear()
-    ws2.update([df.columns.tolist()] + df.values.tolist())
-    print("CSV data added as second sheet tab: 'CSV Export'")
-
-    print(f"CSV also saved locally: {csv_path}")
     print("\nDone!")
 
 

@@ -2,3 +2,4 @@ credentials.json
 venv/
 __pycache__/
 *.pyc
+task3/.env
