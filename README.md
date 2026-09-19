@@ -1,41 +1,23 @@
 # dxFeed Support Engineer Assessment
 
-This repository contains my solutions for the dxFeed Support Engineer assessment.
+Solutions and investigation artifacts for the dxFeed Support Engineer assessment: candle-data consistency and load behavior, a scenario-based incident investigation, and an automated trading-holiday batch pipeline.
 
-## Tasks
+## Final reports
 
-### Task 1 — Data Consistency & Real-Time Behavior
+| Task | Report |
+| ---- | ------ |
+| Task 1 — Data Consistency & Real-Time Behavior | [`report/task1.md`](./report/task1.md) |
+| Task 2 — Incident Investigation | [`report/task2.md`](./report/task2.md) |
+| Task 3 — Trading Holiday Data Pipeline | [`report/task3.md`](./report/task3.md) |
 
-Investigation of candle data consistency, API behavior under concurrent load, operational risks, incident handling, and product improvement proposals.
+## Supporting material
 
-→ [`task1/`](./task1/)
-
-### Task 2 — Incident Investigation
-
-Investigation of an API reliability incident, including scope assessment, hypotheses, escalation criteria, and preventive improvements.
-
-→ [`task2/`](./task2/)
-
-### Task 3 — Trading Holiday Scraper
-
-Automated pipeline for collecting, normalizing, and publishing trading holiday schedules for NASDAQ, NYSE, CME, and OPRA.
-
-→ [`task3/`](./task3/)
-
-## Repository Structure
-
-```text
-.
-├── README.md
-├── task1/
-├── task2/
-└── task3/
-```
-
-Each task directory contains its own README with task-specific information, setup instructions where applicable, and supporting documentation.
+| Directory | Contents |
+| --------- | -------- |
+| [`task1/`](./task1/) | Analyzer, load test, CSVs, detailed investigation notes |
+| [`task2/`](./task2/) | Reviewer README and personal investigation notes |
+| [`task3/`](./task3/) | Holiday scraper, local CSV output, setup docs |
 
 ## Notes
 
-The repository contains the investigation results, implementation, documentation, and supporting artifacts for the assessment tasks.
-
-Credentials and other sensitive configuration are excluded from version control.
+Credentials and other sensitive configuration (for example `credentials.json` and `.env`) are excluded from version control.

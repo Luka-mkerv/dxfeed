@@ -10,9 +10,11 @@ undocumented API behaviors are asserted beyond what is described below.
 
 ### Problem
 
-The API assumes Eastern Time (ET) when no timezone is specified on time
-parameters such as `fromTime`/`toTime`, but this is not clearly documented
-or surfaced as a warning anywhere in the request/response cycle. An
+In tested requests, timestamps without an explicit timezone offset behaved
+consistently with Eastern Time (ET) for parameters such as `fromTime`/`toTime`.
+This was observed empirically against the demo endpoint and was not confirmed
+as an official API-wide documented rule. The default is also not clearly
+surfaced as a warning in the request/response cycle. An
 integrator supplying a timestamp without a timezone (a very natural thing to
 do) will silently have it interpreted as ET. If the integrator assumed UTC,
 local time, or another exchange's timezone, every query will be

@@ -1,5 +1,7 @@
 credentials.json
+*.pem
+.env
+task3/.env
 venv/
 __pycache__/
 *.pyc
-task3/.env
