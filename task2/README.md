@@ -1,296 +1,95 @@
-# Task 2 — Incident Analysis
+# Task 2 — Incident Investigation
 
-## Scenario Summary
+## Objective
 
-At 14:02, monitoring alerts fire:
-- API error rate jumps from 0.2% → 7%
-- CPU at 95% on 2 of 5 instances
-- No deployments in last 24 hours
-- One enterprise customer reporting intermittent 502 errors
-- Traffic volume normal
+Investigate an API reliability incident, determine the likely failure path, assess customer impact, define escalation criteria, and propose preventive improvements.
 
----
+## Incident Summary
 
-## 1. Investigation Plan
+At 14:02, API error rate increased from **0.2% to 7%**. CPU utilization reached approximately **95% on 2 of 5 instances**. Traffic was normal and there had been no deployments during the previous 24 hours. One enterprise customer reported intermittent **502 responses**.
 
-### Initial Observation
+Relevant logs showed:
 
-Working backwards from the logs:
+* `502` responses taking approximately 5 seconds and ending with upstream timeouts.
+* Requests to the internal service failing with `context deadline exceeded`.
+* Retries occurring after upstream failures.
+* Database connection pool fully utilized: **100 active, 0 idle**.
+* A slow database query taking approximately **4.8 seconds**.
+* `/api/health` remained healthy.
 
-14:01:58 GET /api/orders 200 120ms ← system healthy
-14:02:01 GET /api/orders 502 5320ms ← failure begins
-14:02:10 connection pool: 100/100 active, 0 idle ← pool exhausted
-14:02:11 slow query detected: 4800ms ← DB bottleneck
-14:02:15 GET /api/health 200 8ms ← health endpoint responsive
+## Investigation Approach
 
+I would investigate from the external symptom toward the dependency causing it:
 
-The health check returning 200 in 8ms shows the API health endpoint
-is responsive, but does not rule out downstream dependency problems.
+1. **Confirm scope and impact**
 
-### What I Check First
+   * Verify whether the 7% error rate is global or concentrated by endpoint, instance, customer, or region.
+   * Check whether the enterprise customer's 502s correlate with specific instances or requests.
 
-**Step 1 — Determine scope:**
+2. **Correlate application and infrastructure metrics**
 
-Is it one customer or all customers?
-Is it only /api/orders or other endpoints too?
-Is it 2 instances or all 5?
+   * Compare error rate, latency, CPU, connection-pool utilization, database latency, and request volume over the same time period.
+   * Check whether the affected instances show materially different behavior from the remaining instances.
 
-This separates "isolated problem" from "system-wide failure" and
-determines urgency.
+3. **Investigate the upstream timeout**
 
-**Step 2 — What changed at 14:02:**
+   * Trace the request path from API → internal service → database.
+   * Examine the `context deadline exceeded` errors and retry activity.
+   * Check database connection availability and slow-query behavior.
 
-No deployments in the previous 24 hours makes a recent deployment
-less likely as the trigger, but does not completely rule out
-application or configuration issues.
-Traffic normal → makes a traffic spike unlikely
-→ something changed internally at that moment
+4. **Test competing hypotheses**
 
+   * **Database contention / slow queries:** supported by the 4.8s query and exhausted connection pool, but not proven from the supplied evidence alone.
+   * **CPU saturation:** high CPU on 2 instances may contribute to increased request latency.
+   * **Retry amplification:** retries may increase load when the upstream dependency is already degraded.
 
-**Step 3 — Investigate DB hypothesis:**
+The immediate evidence therefore points toward a dependency/resource bottleneck causing requests to exceed their deadlines, with database contention being a leading hypothesis requiring further validation.
 
-Connection pool 100 active / 0 idle → pool fully exhausted
-Slow query 4800ms → DB queries taking significantly longer than normal
-Context deadline exceeded → upstream operation exceeded its deadline
-(could be waiting for DB connection, slow query execution, or other downstream issue)
+## Scope and Impact
 
+The incident affects API reliability, with the observed error rate rising to 7% and at least one enterprise customer experiencing intermittent 502 responses. The healthy `/api/health` endpoint does not establish that business API traffic is healthy; dependency-specific failures can still occur.
 
-The chain to verify:
+I would prioritize determining whether the failures are isolated to the two high-CPU instances or affect the wider service and whether database saturation is shared across instances.
 
-DB query slows → connections held longer → pool fills up →
-new requests wait → timeout → 502 → internal-service retries →
-more load → CPU rises on 2 instances
+## Escalation
 
+If, after **30 minutes**, the error rate remains around **5–8%**, CPU remains high on 2 instances, and the root cause is unresolved, I would escalate.
 
-Each step is a hypothesis to confirm, not a confirmed fact.
-I would verify connection acquisition wait time and confirm
-whether the slow query is directly responsible.
+The escalation should include:
 
-**Step 4 — Check retries:**
+* Current error rate and duration.
+* Affected instances/endpoints/customers.
+* CPU and latency metrics.
+* Relevant 502/upstream-timeout logs.
+* Database connection-pool state.
+* Slow-query evidence.
+* Actions already taken and their results.
+* Current hypotheses and remaining unknowns.
 
-The logs show:
+The primary escalation targets would be a **senior backend/application engineer** and **DBA**. An **incident commander** should also be involved if the enterprise customer impact meets the organization's incident/SLA criteria.
 
-WARN retrying request to internal-service
+I would escalate earlier if the error rate or customer impact increases materially, additional instances become affected, or the service approaches a broader availability risk.
 
+## Preventive Improvements
 
-Application-level retry behavior that may be generating additional
-load on an already struggling system. Retries may consume additional
-connections and CPU, increasing load on the affected components.
-This should be verified with retry metrics and process-level CPU data.
+### 1. Database Connection-Pool Monitoring
 
-### Hypotheses
+Monitor pool utilization, connection wait time, and database query latency with alerts before the pool is exhausted.
 
-**H1 — DB contention (leading hypothesis):**
-Slow DB query may be causing connection pool exhaustion leading to
-cascade of timeouts. Requires verification.
-Evidence pointing here: 100/100 pool + 4800ms query + upstream timeouts.
+**Purpose:** Detection and prevention.
 
-**H2 — CPU saturation:**
-2/5 instances at 95% CPU. Could be cause or consequence.
-Need to check: did CPU spike before or after errors started?
-Are high-CPU instances the same ones generating 502s?
+### 2. Circuit Breaker and Exponential Backoff
 
-**H3 — Retry amplification:**
-Retries may be turning a partial failure into a full incident.
-Retries may consume additional connections and CPU, increasing
-load on the affected components.
+Limit retries against an unhealthy upstream dependency and use exponential backoff to reduce retry amplification.
 
-### Scope and Impact
+**Purpose:** Impact reduction and prevention.
 
-**Scope:**
-- 2 of 5 instances affected by CPU saturation
-- /api/orders shows intermittent 502s; health check remains healthy
-- One enterprise customer confirmed affected
-- Need to verify: are other customers affected? Other endpoints?
+### 3. Distributed Tracing
 
-**Impact:**
-- Error rate 7% (baseline 0.2%) — significant increase from normal
-- Request latency 5000ms+ vs normal 120ms
-- Enterprise customer is experiencing intermittent 502 errors on the affected API endpoint
-- No evidence of data loss in the provided logs; data integrity would need to be verified separately
+Introduce request tracing across the API, internal service, and database dependency.
 
----
+**Purpose:** Faster detection and diagnosis by identifying where request latency is introduced.
 
-## 2. Escalation Decision
+## Key Takeaway
 
-**Decision: Yes, escalate.**
-
-### Timing Reasoning
-
-At 30 minutes — I would escalate because the error rate remains
-at 5–8%, customer impact continues, and the issue has not been
-resolved or shown improvement.
-
-I would escalate earlier if:
-- Error rate were increasing rather than stable
-- More customers became affected
-- A critical function became completely unavailable
-- The issue showed signs of spreading to other services
-
-I would continue initial investigation in parallel with escalation
-rather than waiting for full diagnosis before notifying senior resources.
-
-### Short-term Mitigation to Try Before/During Escalation
-
-If 3 instances are healthy and only 2 are CPU-saturated, consider
-temporarily routing traffic away from the 2 degraded instances.
-Risk: if DB is the bottleneck, more instances = more DB connections,
-potentially worsening pool exhaustion. Proceed with caution.
-
-### Who to Escalate To
-
-- Senior backend/application engineer
-- DBA team (to investigate slow query, check DB locks and indexes)
-- Incident commander if enterprise SLA breach is approaching
-
-### Escalation Message
-
-INCIDENT — 14:02 to present (30+ minutes)
-
-Impact:
-
-API error rate: 0.2% → 5-8% (ongoing)
-Enterprise customer experiencing intermittent 502 errors
-/api/orders endpoint affected
-
-Infrastructure:
-
-2/5 instances at ~95% CPU
-Traffic volume: normal
-Deployments: none in last 24 hours
-
-Evidence from logs:
-
-DB connection pool: 100 active / 0 idle (fully exhausted)
-Slow query detected: 4800ms
-Multiple "context deadline exceeded" errors
-Retries to internal-service observed
-
-Leading hypothesis:
-Slow DB query may be holding connections longer than normal,
-potentially exhausting the connection pool. New requests cannot
-acquire connections, timeout, and retry — possibly amplifying
-load on an already degraded system. Requires verification.
-
-Actions taken:
-
-Analyzed logs and metrics
-Identified DB connection pool exhaustion and slow queries as
-key evidence; DB contention is the leading root-cause hypothesis
-Confirmed upstream timeout pattern
-Confirmed no deployment or traffic spike
-
-Actions needed:
-
-Investigate slow DB query (query plan, locks, indexes)
-Confirm whether CPU saturation is cause or consequence
-Assess whether retry behavior is amplifying the incident
-Evaluate connection pool size vs current load requirements
-
----
-
-## 3. Preventive Improvements
-
-### Improvement 1 — DB Connection Pool Monitoring
-
-**Problem:**
-The connection pool reached 100/100 with no alert. By the time
-customers were seeing errors, the pool was already fully exhausted.
-
-**Solution:**
-Add alerts at multiple thresholds:
-- Warning at 70% pool utilization (70/100 connections)
-- Critical at 85% pool utilization (85/100 connections)
-- Alert on query latency > 1000ms
-- Alert on connection wait time > 500ms
-
-**Why it helps:**
-Catches pool exhaustion before it becomes complete failure.
-At 70% utilization you have time to investigate and mitigate
-before customers are impacted.
-
-**Effect:** Improves detection, reduces customer impact window.
-
----
-
-### Improvement 2 — Circuit Breaker + Retry Controls
-
-**Problem:**
-
-WARN retrying request to internal-service
-
-Failed requests are being retried, potentially generating additional
-load on an already struggling system.
-
-**Solution:**
-Implement circuit breaker pattern with exponential backoff:
-
-Without circuit breaker (current):
-Request fails → retry immediately → fails → retry → fails → retry
-→ additional load on the struggling DB
-
-With circuit breaker:
-Request fails → retry after 1s → fails → retry after 2s → fails
-→ circuit OPENS: stop sending requests temporarily
-→ after cooldown: circuit enters HALF-OPEN
-→ allow limited test requests
-→ if healthy: circuit returns to CLOSED (normal operation)
-→ if still failing: circuit returns to OPEN
-
-
-**Why it helps:**
-Prevents retry storms from amplifying downstream failures.
-Gives degraded services time to recover rather than being
-continuously hammered.
-
-**Effect:** Reduces blast radius of incidents, prevents cascading failures.
-
----
-
-### Improvement 3 — Distributed Tracing
-
-**Problem:**
-During this incident, diagnosing required manually correlating
-separate log lines across layers:
-
-API logs → internal service logs → DB logs
-
-It was unclear where in the chain the 5 seconds were being spent.
-
-**Solution:**
-Implement distributed tracing (Jaeger, Zipkin, or Datadog APM).
-Each request gets a unique trace ID that flows through all layers.
-
-Example of what a trace might show:
-
-Request trace abc123:
-→ API layer: 5ms
-→ internal service: 45ms
-→ waiting for DB conn: 4200ms
-→ DB query execution: 600ms
-→ Total: 4850ms
-
-
-Tracing could show whether the majority of the 5-second latency
-was spent waiting for a DB connection, executing the query, or
-processing within the internal service — information that was
-not immediately available from the logs alone.
-
-**Why it helps:**
-Dramatically faster root cause identification in future incidents.
-Instead of manually correlating logs across layers, the trace
-shows exactly where time is being spent.
-
-**Effect:** Faster investigation, more precise root cause identification.
-
----
-
-## Summary
-
-| | Finding |
-|---|---|
-| Root cause hypothesis | Slow DB query may be causing connection pool exhaustion leading to cascade of timeouts — requires verification |
-| Escalation | Yes, at 30 minutes — customer impacted, not self-resolving, no improvement trend |
-| Key improvement 1 | Alert on DB pool utilization before exhaustion |
-| Key improvement 2 | Circuit breaker + exponential backoff on retries |
-| Key improvement 3 | Distributed tracing across all service layers |
+The incident should be investigated as a dependency and resource-exhaustion problem rather than assuming that high CPU is the root cause. The strongest available evidence is the combination of upstream timeouts, retry activity, an exhausted connection pool, and a 4.8-second database query; however, additional metrics and database-level investigation are required to confirm the causal chain.
