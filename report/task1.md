@@ -26,7 +26,7 @@ This report synthesizes the investigation. Detailed evidence lives under [`task1
 
 Crypto (`BTC/USD`, `ETH/USD`) returned 0 candles on the demo feed, so TSLA was used for high volatility. Plain `EUR/USD{=1m}` returned no candle data; `price=bid` was required.
 
-**Data window:** 2026-09-17, 09:30–16:00 ET / 14:30–21:00 UTC  
+**Data window:** The request used timezone-less timestamps (`2026-09-17T09:30:00` to `2026-09-17T16:00:00`). The API returned data covering approximately 14:30–21:00 UTC, corresponding to 10:30–17:00 EDT on September 17, 2026. Therefore, the dataset does not represent the full 09:30–16:00 EDT regular trading session.
 **Timeframes:** 1m, 5m, 1h  
 **Artifacts:** [`task1/analyzer.py`](../task1/analyzer.py), [`task1/load_test.py`](../task1/load_test.py), CSVs in [`task1/data/`](../task1/data/)
 
@@ -52,7 +52,7 @@ Candle consistency was tested across three instruments representing different ma
 | TSLA       | High-volatility US equity | `TSLA{=1m}`              |
 | EUR/USD    | FX                        | `EUR/USD{=1m,price=bid}` |
 
-The tested window was **2026-09-17, 09:30–16:00 ET (14:30–21:00 UTC)** using 1-minute, 5-minute, and 1-hour candles.
+The request used timezone-less timestamps (`2026-09-17T09:30:00` to `2026-09-17T16:00:00`). The API returned data covering approximately 14:30–21:00 UTC, corresponding to 10:30–17:00 EDT on September 17, 2026. Therefore, the dataset does not represent the full 09:30–16:00 EDT regular trading session. Testing used 1-minute, 5-minute, and 1-hour candles.
 
 The investigation:
 
@@ -86,8 +86,8 @@ volume = sum of constituent volumes
 
 | Instrument | Missing 1m intervals | Observation                                                       |
 | ---------- | -------------------: | ----------------------------------------------------------------- |
-| AAPL       |                    8 | Six 2-minute gaps and one 3-minute gap, all around 16:16–16:56 ET |
-| TSLA       |                    4 | All occurred after 16:00 ET                                       |
+| AAPL       |                    8 | Six 2-minute gaps and one 3-minute gap, all around 20:16–20:56 UTC (~16:16–16:56 EDT), after the 16:00 EDT regular-session close |
+| TSLA       |                    4 | All occurred after the 16:00 EDT regular-session close            |
 | EUR/USD    |                    0 | No missing intervals in the tested window                         |
 
 **Interpretation:** After-hours trading can be sparse, so minutes with no trades may produce no candle. This is **not presented as a confirmed API defect**.
@@ -96,7 +96,7 @@ volume = sum of constituent volumes
 
 ### Finding 2 — AAPL Session-Boundary Volume Discrepancy
 
-For the AAPL hourly candle **starting at 20:00 UTC (15:00 ET)**:
+For the AAPL hourly candle **starting at 20:00 UTC (16:00 EDT)**:
 
 * 5m aggregated volume: **10,337,956**
 * Reported 1h volume: **10,531,811**
@@ -120,7 +120,7 @@ The source of the retained bid/ask values could not be determined from the avail
 
 ### Finding 4 — Timezone Behavior Without Explicit Offset
 
-In the tested requests, timestamps without an explicit timezone offset behaved consistently with Eastern Time.
+In the tested requests, timestamps were timezone-less (no explicit offset). For the main candle request (`fromTime=2026-09-17T09:30:00` to `toTime=2026-09-17T16:00:00`), the API returned data covering approximately 14:30–21:00 UTC, corresponding to 10:30–17:00 EDT on September 17, 2026. This describes the API's actual behavior for the tested request, not an assumption about intended timezone semantics.
 
 For example:
 

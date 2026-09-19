@@ -16,8 +16,8 @@ Investigation of dxFeed demo API candle data consistency across timeframes and i
 
 ## Data Collected
 
-* Date: 2026-09-17 (Thursday, full trading day)
-* Window: 09:30–16:00 ET (14:30–21:00 UTC)
+* Date: 2026-09-17 (Thursday)
+* Window: The request used timezone-less timestamps (`2026-09-17T09:30:00` to `2026-09-17T16:00:00`). The API returned data covering approximately 14:30–21:00 UTC, corresponding to 10:30–17:00 EDT on September 17, 2026. Therefore, the dataset does not represent the full 09:30–16:00 EDT regular trading session.
 * Timeframes: 1-minute, 5-minute, 1-hour
 * Output: `task1/data/` — 9 CSV files
 
@@ -47,12 +47,12 @@ volume = sum of all 1m volumes
 
 ### Finding 1 — Missing 1m Intervals in After-Hours Data
 
-**Observed fact:** Missing 1-minute intervals after market close (16:00 ET).
+**Observed fact:** Missing 1-minute intervals after the 16:00 EDT regular-session close. The raw UTC interval range is approximately 20:16–20:56 UTC, corresponding to approximately 16:16–16:56 EDT on September 17, 2026.
 
 **Evidence:**
 
-* AAPL: 8 missing 1-minute intervals (six 2-minute gaps + one 3-minute gap), all between 16:16–16:56 ET
-* TSLA: 4 missing intervals, all after 16:00 ET
+* AAPL: 8 missing 1-minute intervals (six 2-minute gaps + one 3-minute gap), all between approximately 20:16–20:56 UTC (16:16–16:56 EDT)
+* TSLA: 4 missing intervals, all after the 16:00 EDT regular-session close
 * EUR/USD: 0 missing intervals during the tested window
 
 **Interpretation:** After-hours trading is sparse. Minutes with zero trades produce no candle. This is likely expected behavior, but it is not documented in the demo API documentation.
@@ -63,7 +63,7 @@ volume = sum of all 1m volumes
 
 ### Finding 2 — Volume Discrepancy at Session Boundary (Investigation Inconclusive)
 
-**Observed fact:** For AAPL, the reported 1h candle **starting at 20:00 UTC (15:00 ET)** did not match the sum of the 5m candles within that hour.
+**Observed fact:** For AAPL, the reported 1h candle **starting at 20:00 UTC (16:00 EDT)** did not match the sum of the 5m candles within that hour.
 
 * 5m aggregated volume: 10,337,956
 * 1h reported volume: 10,531,811
@@ -93,7 +93,7 @@ bid=334.75  ask=334.88  time=None
 
 ### Finding 4 — Timezone Behavior
 
-**Observed fact:** In the tested requests, timestamps submitted without an explicit timezone offset were interpreted consistently with Eastern Time.
+**Observed fact:** In the tested requests, timestamps were timezone-less (no explicit offset). For the main candle request (`fromTime=2026-09-17T09:30:00` to `toTime=2026-09-17T16:00:00`), the API returned data covering approximately 14:30–21:00 UTC, corresponding to 10:30–17:00 EDT on September 17, 2026. This describes the API's actual behavior for the tested request, not an assumption about intended timezone semantics.
 
 **Evidence:** Request `fromTime=2026-09-17T10:00:00` (no offset) returned first candle at 15:00:00 UTC, which corresponds to 10:00 ET (UTC−5).
 
