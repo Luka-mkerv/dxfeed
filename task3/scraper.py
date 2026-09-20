@@ -52,6 +52,20 @@ def scrape_nasdaq():
     return holidays
 
 
+def _clean_nyse_date(date_raw: str) -> str:
+    """Strip NYSE source annotations that break pandas date parsing.
+
+    Examples from the live calendar:
+      'Friday, July 3 (Independence Day observed)' → 'Friday, July 3'
+      'Thursday, November 26***' → 'Thursday, November 26'
+      'Friday, December 25****' → 'Friday, December 25'
+    """
+    cleaned = re.sub(r'\([^)]*\)', '', date_raw)
+    cleaned = cleaned.replace('*', '')
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().rstrip(',')
+    return cleaned
+
+
 def scrape_nyse():
     print("Scraping NYSE...")
     url = "https://www.nyse.com/markets/hours-calendars"
@@ -71,7 +85,7 @@ def scrape_nyse():
                 if date_raw and date_raw != '—' and date_raw != '—*':
                     holidays.append({
                         'exchange': 'NYSE',
-                        'date': f"{date_raw}, {YEAR}",
+                        'date': f"{_clean_nyse_date(date_raw)}, {YEAR}",
                         'holiday': holiday_name
                     })
     return holidays

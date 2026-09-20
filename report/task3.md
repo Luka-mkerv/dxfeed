@@ -2,33 +2,55 @@
 
 ## 1. Objective
 
-The goal of Task 3 is to collect the 2026 trading holidays for:
+The objective of Task 3 is to build a batch pipeline that collects 2026 trading holiday information for NASDAQ, NYSE, CME, and OPRA, normalizes the results into a common structure, stores the resulting dataset locally, and publishes it to Google Sheets and an existing Google Drive CSV.
 
-* NASDAQ
-* NYSE
-* CME
-* OPRA
+The implementation uses live exchange sources where practical and source-specific handling where an exchange does not provide the required data through a directly accessible endpoint.
 
-The scraper normalizes the results into a common format, saves them locally as CSV, and synchronizes the data with Google Sheets and an existing CSV file in Google Drive.
+The final validated dataset contains **42 records**:
 
-The main design goal is to use live exchange sources where practical, while keeping source-specific handling isolated so that one exchange failure does not stop the entire pipeline.
+* CME: 10
+* NASDAQ: 12
+* NYSE: 10
+* OPRA: 10
 
 ---
 
 ## 2. Architecture
 
-The scraper is organized into independent exchange-specific functions:
+The pipeline follows a source-specific scraping → common normalization → publishing architecture.
 
 ```text
-NASDAQ ──┐
-NYSE ────┤
-CME ─────┼──> Normalize with pandas ──> holidays.csv
-OPRA ────┘                              │
-                                       ├──> Google Sheets
-                                       └──> Google Drive CSV
+                    ┌─────────────┐
+                    │   NASDAQ    │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │     NYSE    │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │     CME     │
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │     OPRA    │
+                    └──────┬──────┘
+                           │
+                           ▼
+                Source-specific parsing
+                           │
+                           ▼
+                  Common record format
+                           │
+                           ▼
+                 Pandas normalization
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+        Local CSV    Google Sheets   Drive CSV
 ```
 
-Each scraper returns dictionaries using the same structure:
+Each scraper returns records using the same structure:
 
 ```python
 {
@@ -38,301 +60,499 @@ Each scraper returns dictionaries using the same structure:
 }
 ```
 
-The main pipeline then:
-
-1. Runs each exchange scraper independently.
-2. Combines the returned records.
-3. Parses and normalizes dates with pandas.
-4. Removes invalid dates.
-5. Formats dates as `YYYY-MM-DD`.
-6. Sorts the final dataset by exchange and date.
-7. Saves `holidays.csv`.
-8. Updates the Google Sheet.
-9. Updates the existing CSV file in Google Drive.
-
-Each exchange scraper has its own error handling, so a failure from one source does not terminate the complete run.
+This separates source-specific parsing from common data processing and publishing.
 
 ---
 
-## 3. Exchange Sources
+# 3. Exchange Sources
 
-### NASDAQ
+## 3.1 NASDAQ
 
-NASDAQ is scraped from its published holiday calendar using an HTTP request and BeautifulSoup.
+NASDAQ is collected through HTTP requests and HTML parsing with BeautifulSoup.
 
-The scraper extracts the holiday name and date, then converts the result into the common data structure.
+The source contains multiple tables, so the scraper identifies the relevant holiday table rather than assuming that the first table on the page is the required dataset.
 
-NASDAQ's calendar also contains early-close information. These entries are retained where they are part of the published calendar data.
+The source table uses the following relevant ordering:
 
----
+```text
+Holiday → Date → Market Status
+```
 
-### NYSE
+The scraper extracts the holiday name and date and converts the results into the common record structure.
 
-NYSE is scraped from its published 2026 holiday calendar using an HTTP request and BeautifulSoup.
-
-The scraper extracts the relevant holiday dates and names and returns them in the common format.
-
-The final normalization step is responsible for converting the returned dates into the standard `YYYY-MM-DD` representation.
+NASDAQ produced **12 records** in the final dataset.
 
 ---
 
-### CME
+## 3.2 NYSE
 
-CME required additional investigation because the normal HTTP approach could not retrieve the trading-hours page.
+NYSE is also collected through HTTP requests and HTML parsing.
 
-#### Investigation
+The NYSE source contains a table covering multiple years. For the 2026 section, dates are represented without an explicit year, so the scraper appends the configured target year:
 
-The first approach used `requests`, but the CME page returned HTTP 403.
+```text
+2026
+```
 
-An internal trading-hours API was also identified during browser/network investigation, but direct requests to that API were also rejected with HTTP 403.
+Placeholder values such as `—` are ignored.
 
-An earlier Playwright attempt then failed with:
+### Source annotation issue
+
+The NYSE source also contains annotations attached to some dates. Examples include:
+
+```text
+Friday, July 3 (Independence Day observed), 2026
+Thursday, November 26***, 2026
+Friday, December 25****, 2026
+```
+
+Passing these strings directly to the common pandas date parser can result in `NaT`.
+
+This initially caused three valid NYSE records to disappear during the global validation step because invalid parsed dates were removed with `dropna()`.
+
+The issue was fixed at the source boundary rather than by weakening global validation.
+
+A NYSE-specific cleaner removes:
+
+* parenthetical annotations
+* `*` markers
+* excess whitespace
+* trailing commas
+
+Conceptually:
+
+```python
+def _clean_nyse_date(date_raw: str) -> str:
+    cleaned = re.sub(r'\([^)]*\)', '', date_raw)
+    cleaned = cleaned.replace('*', '')
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().rstrip(',')
+    return cleaned
+```
+
+The cleaned value is then passed into the normal date pipeline.
+
+This preserves the global validation rule while handling the known format of the NYSE source.
+
+NYSE produced **10 records** in the final dataset.
+
+---
+
+# 4. CME Investigation and Implementation
+
+CME required the most investigation because the normal HTTP scraping approach was not sufficient.
+
+## 4.1 Direct HTTP attempt
+
+The CME trading-hours page was initially accessed using normal HTTP requests.
+
+The request returned:
+
+```text
+HTTP 403
+```
+
+This prevented conventional `requests` + BeautifulSoup scraping.
+
+## 4.2 Internal API investigation
+
+The page's network traffic was inspected to identify whether the holiday data came from an internal API.
+
+An internal trading-hours endpoint was identified, but direct access to that endpoint also resulted in:
+
+```text
+HTTP 403
+```
+
+Therefore, switching from the visible page to the underlying API did not solve the access problem.
+
+## 4.3 Initial Playwright attempt
+
+Browser automation was then tested with Playwright.
+
+The first implementation encountered:
 
 ```text
 ERR_HTTP2_PROTOCOL_ERROR
 ```
 
-`exchange-calendars` was also evaluated as an alternative source. Although CME calendars are available through the library, they did not reproduce the complete 2026 holiday schedule required by the task.
+This showed that simply replacing `requests` with a browser was not sufficient in the original configuration.
 
-A browser-based AI agent was then used as a diagnostic tool. It successfully loaded the CME trading-hours page, accepted the cookie banner, located:
+## 4.4 Additional investigation
+
+The `exchange-calendars` Python package was evaluated as another possible source.
+
+Although CME calendars were available, they did not reproduce the complete 2026 holiday dataset required for this task with sufficient fidelity.
+
+It was therefore not used as the production source.
+
+A browser-based diagnostic agent was also used to inspect the live CME page. It was able to navigate the page, handle the cookie banner, locate the live:
 
 ```text
 2026 CME Globex Trading Schedule
 ```
 
-and identified the table containing the relevant schedule.
+heading, and extract the relevant table.
 
-This established that the page was accessible in a real browser context and helped identify the required DOM structure.
+The agent was used only as a diagnostic investigation tool. It is **not** a runtime dependency of the production scraper.
 
-A clean standalone Playwright + Chromium test was then created separately from the dxFeed project. It successfully reproduced the page access and table extraction without using an AI agent.
+## 4.5 Clean Playwright reproduction
 
-#### Production implementation
+A separate clean Playwright + Chromium experiment was then created outside the main dxFeed project to determine whether the browser approach itself was viable.
 
-The production scraper therefore uses deterministic Playwright with Chromium.
+That reproduction successfully:
 
-A notable implementation detail is that normal:
+* launched Chromium
+* loaded the CME page
+* received HTTP 200
+* located the 2026 trading schedule
+* located the relevant table
+* captured the page successfully
 
-```python
-headless=True
-```
+This isolated the problem from the production project's Python code and demonstrated that Playwright + Chromium could be used reliably with the correct browser configuration.
 
-continued to produce the HTTP/2 error.
+## 4.6 Production implementation
 
-The working configuration uses Chromium's newer headless mode:
+The production scraper uses Playwright with Chromium.
+
+The working configuration uses:
 
 ```text
+headless=False
 --headless=new
 ```
 
-while launching Chromium with the browser window hidden.
+The `--headless=new` flag provides the newer Chromium headless implementation while still allowing the job to run without a visible browser window.
 
-The scraper:
+The scraper reads the live CME Globex trading schedule rather than embedding a manually maintained list of dates.
 
-1. Launches Playwright-managed Chromium.
-2. Opens the CME trading-hours page.
-3. Locates the `2026 CME Globex Trading Schedule` section.
-4. Extracts the associated table.
-5. Parses the multi-day trading windows.
-6. Converts each relevant window into one canonical holiday date.
-7. Filters the resulting dates to 2026.
+### Multi-day holiday windows
 
-The CME page presents trading windows rather than simply listing one date per holiday. For example, a holiday may appear as:
+CME's table represents holidays as trading windows rather than simply providing one date per holiday.
+
+For example, a holiday may be represented as a range such as:
 
 ```text
-December 31, 2025 - January 2, 2026
+December 24–26
 ```
 
-The scraper therefore derives the actual holiday date from the holiday name and date range rather than treating every date in the trading window as a holiday.
+The scraper converts these windows into a canonical holiday date for the requested year.
 
-The resulting 2026 CME dates are:
+The final 2026 CME dates are:
 
 ```text
-2026-01-01  New Year's Day
-2026-01-19  Martin Luther King Jr. Day
-2026-02-16  Presidents' Day
-2026-04-03  Good Friday
-2026-05-25  Memorial Day
-2026-06-19  Juneteenth
-2026-07-03  Independence Day (observed)
-2026-09-07  Labor Day
-2026-11-26  Thanksgiving Day
-2026-12-25  Christmas Day
+2026-01-01
+2026-01-19
+2026-02-16
+2026-04-03
+2026-05-25
+2026-06-19
+2026-07-03
+2026-09-07
+2026-11-26
+2026-12-25
 ```
 
-No hardcoded CME holiday list or static fallback is used in the production scraper.
+The implementation derives these values from the live table rather than hardcoding them.
 
-If browser loading or parsing fails, the CME scraper raises an error and the main pipeline continues with the other exchanges.
+CME produced **10 records** in the final dataset.
 
 ---
 
-### OPRA
+# 5. OPRA
 
-OPRA's official website is accessible from the execution environment, but its document library does not currently contain a 2026 Holiday Schedule.
+The official OPRA website is accessible from the execution environment.
 
-The 2025 OPRA schedule was therefore used as a reference for the regular holiday structure, and the verified 2026 regular full-day holidays were represented as a static dataset.
+However, the current OPRA document library does not contain a dedicated 2026 Holiday Schedule document.
 
-This is intentionally different from the CME approach: there is currently no published 2026 OPRA schedule available from the official document library to scrape.
+Because the required 2026 regular full-day holiday information was not available as a current dedicated document, the implementation uses a verified static 2026 dataset based on the available official schedule/reference information.
 
-The fallback covers regular full-day holidays but does not attempt to model early closes or exceptional closures that could appear in a future official schedule.
+This is intentionally different from claiming that the OPRA website itself was inaccessible.
+
+The fallback covers regular full-day holidays and does not attempt to model:
+
+* early closes
+* exceptional closures
+* future schedule changes
+
+OPRA produced **10 records** in the final dataset.
 
 ---
 
-## 4. Data Normalization
+# 6. Data Normalization
 
-After all exchange scrapers complete, the results are combined into a pandas DataFrame.
+After all source-specific scrapers finish, their results are combined into one pandas DataFrame.
 
-Dates are parsed using:
+The general pipeline is:
+
+```text
+Scraper results
+      │
+      ▼
+DataFrame
+      │
+      ▼
+Parse dates
+      │
+      ▼
+Remove invalid dates
+      │
+      ▼
+Format as YYYY-MM-DD
+      │
+      ▼
+Sort by exchange/date
+      │
+      ▼
+Publish
+```
+
+Date parsing uses:
 
 ```python
 pd.to_datetime(..., format="mixed")
 ```
 
-Invalid dates are removed, and valid dates are formatted as:
+Invalid dates are converted to `NaT` and removed before publication.
+
+The NYSE-specific cleaning described above ensures that legitimate annotated dates are cleaned before reaching this global validation stage.
+
+The final date format is:
 
 ```text
 YYYY-MM-DD
 ```
 
-The final dataset is sorted by:
+Records are sorted by:
 
-1. Exchange
-2. Date
-
-This produces a consistent schema regardless of how each individual exchange publishes its calendar.
+1. exchange
+2. date
 
 ---
 
-## 5. Google Integration
+# 7. Error Handling
 
-The scraper uses a Google service account for synchronization.
-
-Credentials are loaded from the local credentials file and used with the required Google API scopes.
-
-The resulting data is:
-
-* written to the configured Google Sheet
-* uploaded to the existing CSV file in Google Drive
-
-The Drive integration updates an existing file rather than attempting to create a new Drive file, avoiding the service-account storage/quota limitation encountered during development.
-
----
-
-## 6. Error Handling
-
-Each exchange scraper is isolated with its own exception handling.
+Each exchange scraper is handled independently.
 
 Conceptually:
 
 ```text
 NASDAQ failure ──┐
-NYSE failure ────┤
-CME failure ─────┼──> Other exchanges continue
-OPRA failure ────┘
+NYSE failure   ──┤
+CME failure    ──┼──> Other sources continue
+OPRA failure   ──┘
 ```
 
-This prevents a failure in one external source from stopping the complete task.
+This prevents one problematic source from automatically terminating the entire collection process.
 
-The Google synchronization is performed after local data generation. Therefore, the locally generated CSV remains available even if a later Google API operation fails.
+Source-specific handling is used where required:
+
+* NASDAQ: HTTP/HTML parsing
+* NYSE: HTTP/HTML parsing plus date annotation cleaning
+* CME: Playwright/Chromium browser extraction
+* OPRA: verified static fallback
+
+The common normalization stage remains strict. Invalid dates are not silently published.
 
 ---
 
-## 7. Setup
+# 8. Google Sheets and Google Drive Integration
 
-Create and activate the Python virtual environment:
+The pipeline uses a Google service account for external publishing.
+
+Authentication is performed using:
+
+```python
+Credentials.from_service_account_file(...)
+```
+
+The credentials are then passed to the Google Sheets client.
+
+The required Google APIs are used for:
+
+* updating the Google Sheet
+* locating/updating the existing Drive CSV
+
+The implementation updates an existing Drive CSV rather than relying on service-account file creation.
+
+This avoids the service-account Drive quota/restriction encountered during development.
+
+Secrets are kept outside the source code.
+
+---
+
+# 9. Setup
+
+Create the virtual environment:
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-Install the required Python packages:
+Install Python dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Install the Chromium browser used by Playwright:
+Install Chromium for Playwright:
 
 ```bash
 playwright install chromium
 ```
 
-Required local configuration includes:
+Required configuration includes:
 
 ```text
-.env
 credentials.json
+.env
 ```
 
-The Google service-account credentials must have access to the target Sheet and existing Drive CSV.
+The environment configuration provides the required Google resource identifiers.
 
-Run the scraper from the project root:
+The scraper is then executed with:
 
 ```bash
 python task3/scraper.py
 ```
 
----
-
-## 8. Validation
-
-The completed pipeline was executed successfully from the dxFeed project:
+The execution performs the complete pipeline:
 
 ```text
-Scraping NASDAQ...
-→ 12 holidays found
-
-Scraping NYSE...
-→ 10 holidays found
-
-Scraping CME (Playwright)...
-→ 10 holidays found
-
-Total holidays collected: 39
-
-CSV saved locally
-Google Sheet updated
-CSV updated in Google Drive
-
-Done!
+Scrape
+  ↓
+Normalize
+  ↓
+Validate
+  ↓
+Write holidays.csv
+  ↓
+Update Google Sheet
+  ↓
+Update Drive CSV
 ```
 
-The final normalized dataset contains:
+---
+
+# 10. Validation
+
+The final production run was validated after correcting the NYSE annotation issue.
+
+The resulting counts are:
+
+| Exchange  | Records |
+| --------- | ------: |
+| CME       |      10 |
+| NASDAQ    |      12 |
+| NYSE      |      10 |
+| OPRA      |      10 |
+| **Total** |  **42** |
+
+The important validation point is that the three previously lost NYSE records are now present:
 
 ```text
-CME       10
-NASDAQ    12
-NYSE       7
-OPRA      10
-----------------
-Total     39
+2026-07-03 — Independence Day observed
+2026-11-26 — Thanksgiving Day
+2026-12-25 — Christmas Day
 ```
 
-The local CSV was regenerated successfully, and both Google Sheet and Google Drive synchronization completed without errors.
+The resulting dataset was successfully written to:
 
-The difference between the NYSE scraper's reported 10 extracted records and the 7 records present after normalization should be investigated further if the scraper is extended beyond the current task.
+```text
+holidays.csv
+```
 
----
-
-## 9. Limitations
-
-The main limitations are source-specific:
-
-* **NASDAQ:** published calendar data may contain early-close entries in addition to full holidays.
-* **NYSE:** source formatting requires normalization before producing the final dataset.
-* **CME:** requires browser automation because direct HTTP/API access returned 403 and an earlier Playwright configuration produced an HTTP/2 error.
-* **OPRA:** no official 2026 Holiday Schedule is currently available in the site's document library, so the regular 2026 holiday dataset is represented statically.
-
-The scraper is therefore not completely source-uniform: each exchange uses the method most appropriate for the currently available source.
+and the Google Sheet and existing Google Drive CSV were successfully updated.
 
 ---
 
-## 10. Conclusion
+# 11. Design Decisions
 
-Task 3 implements a complete holiday-data pipeline covering NASDAQ, NYSE, CME, and OPRA.
+## Common interface
 
-The implementation separates exchange-specific scraping from common normalization and output logic. It uses live sources where they are available, Playwright + Chromium for the CME browser-only case, and a documented static dataset for OPRA where an official 2026 schedule is not currently published.
+All exchange-specific functions return the same record structure.
 
-The resulting data is normalized into a single CSV format and synchronized with both Google Sheets and Google Drive.
+This makes the downstream pipeline independent of the source implementation.
 
-The final implementation favors deterministic scraping and explicit source-specific behavior rather than relying on an AI agent or undocumented assumptions about external exchange infrastructure.
+## Source-specific parsing
+
+Parsing quirks are handled as close to the source as possible.
+
+For example, NYSE annotation cleaning is performed inside `scrape_nyse()` rather than weakening the global date-validation logic.
+
+## Strict normalization
+
+The common pandas pipeline validates dates before publication.
+
+This provides a final safety net against malformed source data.
+
+## Independent source failures
+
+A failure in one exchange does not automatically terminate processing of the other exchanges.
+
+## Browser automation only where necessary
+
+Playwright is used for CME because conventional HTTP access was blocked and the live data could not be reliably obtained through the direct endpoint.
+
+The other sources remain HTTP-based.
+
+## No runtime AI dependency
+
+An AI browser agent was used during CME investigation to help diagnose the live page structure.
+
+The production scraper does not depend on an LLM or browser agent.
+
+## No hardcoded CME holiday list
+
+CME dates are derived from the live trading-hours table.
+
+## Secrets outside source code
+
+Credentials and Google resource identifiers are kept in configuration rather than embedded directly in the scraper.
+
+---
+
+# 12. Known Limitations
+
+### OPRA
+
+The current implementation uses a static verified 2026 regular full-day dataset because a dedicated 2026 Holiday Schedule is not currently present in the official OPRA document library.
+
+The fallback does not model early closes or exceptional closures.
+
+### CME browser dependency
+
+CME scraping depends on Playwright and Chromium.
+
+Browser startup, page loading, and browser/network behavior introduce more operational complexity than a normal HTTP request.
+
+### Google Drive creation
+
+The implementation assumes that the target Drive CSV already exists.
+
+Creating new Drive files using the service-account setup encountered quota/account restrictions during development.
+
+### Batch architecture
+
+The scraper is currently designed as a batch job. It does not continuously monitor exchange schedules for changes.
+
+---
+
+# 13. Conclusion
+
+The completed pipeline collects, normalizes, validates, and publishes 2026 trading holiday data for four exchanges.
+
+The final validated output contains:
+
+```text
+CME     10
+NASDAQ  12
+NYSE    10
+OPRA    10
+---------------
+Total   42
+```
+
+The implementation combines conventional HTTP scraping, source-specific parsing, browser automation for CME, a documented OPRA fallback, centralized pandas normalization, and Google publishing.
+
+The main implementation challenge was CME access, which required investigation beyond ordinary HTTP requests. The main data-quality issue was the presence of annotations in NYSE date strings, which was resolved at the source-parsing boundary while preserving strict global validation.
