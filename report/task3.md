@@ -389,26 +389,21 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-Install Python dependencies:
+This repository does not include a `requirements.txt`. Install the packages imported by `task3/scraper.py`, then install Chromium for Playwright:
 
 ```bash
-pip install -r requirements.txt
-```
-
-Install Chromium for Playwright:
-
-```bash
+pip install requests beautifulsoup4 pandas gspread google-auth google-api-python-client python-dotenv playwright
 playwright install chromium
 ```
 
 Required configuration includes:
 
 ```text
-credentials.json
-.env
+task3/credentials.json
+task3/.env          # copy from task3/.env.example
 ```
 
-The environment configuration provides the required Google resource identifiers.
+The environment configuration provides `SHEET_ID` and `CSV_FILE_ID` (see `task3/.env.example`).
 
 The scraper is then executed with:
 

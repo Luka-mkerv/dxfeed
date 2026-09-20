@@ -92,24 +92,26 @@ This fallback does not attempt to model early closes or exceptional closures.
 
 A Google service account is used for publishing.
 
-Required environment variables:
+Required environment variables (see [`.env.example`](./.env.example)):
 
 ```text
-GOOGLE_SHEET_ID
-GOOGLE_DRIVE_FOLDER_ID
+SHEET_ID
+CSV_FILE_ID
 ```
+
+These match `task3/scraper.py` (`os.getenv('SHEET_ID')`, `os.getenv('CSV_FILE_ID')`).
 
 The service account credentials are loaded from:
 
 ```text
-credentials.json
+task3/credentials.json
 ```
 
-Google Sheets is updated through `gspread`.
+Google Sheets is updated through `gspread` using `SHEET_ID`.
 
-The Drive CSV is updated through the Google Drive API.
+The Drive CSV is updated through the Google Drive API using `CSV_FILE_ID` (an existing Drive **file** ID, not a folder ID).
 
-The implementation updates an existing Drive CSV rather than attempting to create a new Drive file, because service-account Drive file creation can fail due to quota/account restrictions.
+The implementation updates that existing Drive CSV rather than creating a new Drive file, because service-account Drive file creation can fail due to quota/account restrictions.
 
 Credentials and secrets are excluded from the repository.
 
@@ -122,21 +124,21 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-Install dependencies:
+This repository does not include a `requirements.txt`. Install the packages imported by `task3/scraper.py`, then install Chromium for Playwright:
 
 ```bash
-pip install -r requirements.txt
+pip install requests beautifulsoup4 pandas gspread google-auth google-api-python-client python-dotenv playwright
 playwright install chromium
 ```
 
 Configure:
 
 ```text
-credentials.json
-.env
+task3/credentials.json
+task3/.env          # copy from task3/.env.example
 ```
 
-Then run:
+Then run from the repository root:
 
 ```bash
 python task3/scraper.py
@@ -192,6 +194,7 @@ The final run successfully updated both Google Sheets and the Google Drive CSV.
 task3/
 ├── scraper.py
 ├── holidays.csv
+├── .env.example
 └── README.md
 
 report/

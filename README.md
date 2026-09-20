@@ -12,11 +12,11 @@ Solutions and investigation artifacts for the dxFeed Support Engineer assessment
 
 ## Supporting material
 
-| Directory | Contents |
-| --------- | -------- |
-| [`task1/`](./task1/) | Analyzer, load test, CSVs, detailed investigation notes |
-| [`task2/`](./task2/) | Reviewer README and personal investigation notes |
-| [`task3/`](./task3/) | Holiday scraper, local CSV output, setup docs |
+| Path | Contents |
+| ---- | -------- |
+| [`task1/`](./task1/) | Analyzer, load test, CSVs, and detailed Task 1 investigation notes |
+| [`report/task2.md`](./report/task2.md) | Task 2 scenario-based incident investigation (report only; no separate `task2/` directory) |
+| [`task3/`](./task3/) | Holiday scraper, local CSV output, `.env.example`, and setup docs |
 
 ## Notes
 
