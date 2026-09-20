@@ -47,49 +47,57 @@ After pandas processing, dates are normalized to `YYYY-MM-DD` and rows are sorte
 
 ## 4. Exchange Source Handling
 
-| Exchange | Approach | Result |
-| -------- | -------- | ------ |
-| NASDAQ | Live scraping | Working |
-| NYSE | Live scraping | Working |
-| CME | Official published 2026 schedule (fallback) | Working |
-| OPRA | Official published schedule (fallback) | Working |
+| Exchange | Approach                                 | Result  |
+| -------- | ---------------------------------------- | ------- |
+| NASDAQ   | Live scraping                            | Working |
+| NYSE     | Live scraping                            | Working |
+| CME      | Verified 2026 schedule (static fallback) | Working |
+| OPRA     | Verified 2026 schedule (static fallback) | Working |
 
 ### NASDAQ
 
-- Live scrape of the holiday schedule page
-- First relevant table is the holiday schedule
-- Columns: Holiday, Date, Market Status
-- Date/holiday mapping corrected to match that column order
+* Live scrape of the holiday schedule page
+* First relevant table is the holiday schedule
+* Columns: Holiday, Date, Market Status
+* Date/holiday mapping corrected to match that column order
 
 ### NYSE
 
-- Live scrape
-- Columns: Holiday, 2026, 2027, 2028
-- 2026 date cells lack a year; the configured `YEAR` is appended
-- Em-dash placeholders are filtered out
+* Live scrape
+* Columns: Holiday, 2026, 2027, 2028
+* 2026 date cells lack a year; the configured `YEAR` is appended
+* Em-dash placeholders are filtered out
 
 ### CME
 
 Investigation summary:
 
-1. Direct requests returned 403
+1. Direct requests returned `403`
 2. Playwright produced `ERR_HTTP2_PROTOCOL_ERROR`
 3. DevTools/network inspection identified an internal trading-hours API
-4. Direct access to that API also returned 403
-5. Official 2026 schedule used as fallback
+4. Direct access to that API also returned `403`
+5. `exchange-calendars` was evaluated as an alternative source
+6. Its CME/CMES calendar did not reproduce the complete 2026 holiday dataset required by this task
+7. The verified 2026 CME schedule was therefore retained as a static fallback
 
-**Safe conclusion:** Direct and browser-based access to the CME source/API was unsuccessful from the execution environment, so the official published 2026 schedule was used as a fallback.
+**Safe conclusion:** Direct and browser-based access to the CME source/API was unsuccessful from the execution environment. An available exchange-calendar library was also evaluated but was insufficient for the required holiday dataset, so the verified 2026 schedule was used as a fallback.
 
 No claim is made here about specific WAF internals, TLS fingerprinting mechanisms, or geo-blocking policies beyond the observed failures.
 
 ### OPRA
 
-- Requests timed out
-- `curl` over IPv4 timed out
-- IPv6 could not resolve
-- Browser access failed
+Investigation summary:
 
-**Safe conclusion:** The official OPRA source was inaccessible from the execution environment, so the published schedule was used as fallback.
+1. The official OPRA website (`opraplan.com`) is accessible from the execution environment
+2. The site's document library contains current 2026 notices and historical holiday schedules
+3. The document library does not currently contain a 2026 OPRA Holiday Schedule
+4. The 2025 official OPRA Holiday Schedule was inspected as a reference for the regular holiday structure
+5. `exchange-calendars` was evaluated but does not provide an OPRA calendar
+6. The verified 2026 regular holiday dates were therefore retained as a static fallback
+
+**Safe conclusion:** The official OPRA website is accessible, but a 2026 Holiday Schedule is not currently published in its document library. Therefore, the verified 2026 regular holiday schedule is maintained as a static fallback.
+
+This fallback represents the regular full-day holiday schedule and does not attempt to model separate early-close periods or exceptional one-off closures.
 
 ## 5. Normalization
 

@@ -213,5 +213,4 @@ Data is normalized and sorted with pandas before being written to the local CSV 
 | ------------------------------------------ | ------------------------------------------------- |
 | [`scraper.py`](./scraper.py)               | Pipeline implementation                           |
 | [`holidays.csv`](./holidays.csv)           | Local normalized output                           |
-| [`Forme.md`](./Forme.md)                   | Detailed investigation notes and working material |
 | [`../report/task3.md`](../report/task3.md) | Final assessment report                           |

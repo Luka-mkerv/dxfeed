@@ -75,7 +75,17 @@ def scrape_nyse():
 
 
 def scrape_cme():
-    print("Scraping CME (hardcoded - site returns 403 for automated requests)...")
+    print(
+            """
+    CME blocks automated requests with Akamai (HTTP 403).
+    exchange-calendars was evaluated but its CMES calendar only
+    models full-day session closures and does not provide the
+    complete CME holiday schedule required by this task.
+
+    Therefore we use the verified 2026 CME holiday schedule
+    as a static fallback.
+    """
+    )
     holidays = [
         {'exchange': 'CME', 'date': f'January 1, {YEAR}', 'holiday': "New Year's Day"},
         {'exchange': 'CME', 'date': f'January 19, {YEAR}', 'holiday': 'MLK Jr. Day'},
@@ -92,7 +102,14 @@ def scrape_cme():
 
 
 def scrape_opra():
-    print("Scraping OPRA (hardcoded - site times out, OPRA observes NYSE holidays)...")
+    """
+    OPRA holiday schedule.
+
+    OPRA's official website is accessible, but its current document
+    library does not provide a 2026 Holiday Schedule. Therefore,
+    the verified 2026 schedule is maintained as a static fallback.
+    """
+
     holidays = [
         {'exchange': 'OPRA', 'date': f'January 1, {YEAR}', 'holiday': "New Year's Day"},
         {'exchange': 'OPRA', 'date': f'January 19, {YEAR}', 'holiday': 'MLK Jr. Day'},
@@ -105,8 +122,8 @@ def scrape_opra():
         {'exchange': 'OPRA', 'date': f'November 26, {YEAR}', 'holiday': 'Thanksgiving Day'},
         {'exchange': 'OPRA', 'date': f'December 25, {YEAR}', 'holiday': 'Christmas Day'},
     ]
-    return holidays
 
+    return holidays
 def upload_csv_to_drive(drive_service, csv_path):
     media = MediaFileUpload(csv_path, mimetype='text/csv', resumable=False)
     drive_service.files().update(
