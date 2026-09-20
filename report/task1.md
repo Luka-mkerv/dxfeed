@@ -165,7 +165,7 @@ The assessment required an FX pair and a high-volatility instrument. Crypto was 
 
 ### Supporting Evidence
 
-The detailed investigation, raw observations, methodology, and execution instructions are documented in [`task1/data_intergity.md`](../task1/data_intergity.md).
+The detailed investigation, raw observations, methodology, and execution instructions are documented in [`task1/data_integrity.md`](../task1/data_integrity.md).
 
 
 ## 4. Real-Time Behavior Under Load
